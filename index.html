@@ -99,57 +99,65 @@ Available actions:
       chatBox.scrollTop = chatBox.scrollHeight;
     }
 
-    async function sendMessage() {
-      const userMsg = input.value.trim();
-      if (!userMsg) return;
-      addMessage(userMsg, "user");
-      input.value = "";
+async function sendMessage() {
+  const userMsg = input.value.trim();
+  if (!userMsg) return;
+  addMessage(userMsg, "user");
+  input.value = "";
 
-      try {
-        // 1. Ask Gemini first with SYSTEM_CONTEXT
-        const response = await fetch(API_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [
-              { role: "system", parts: [{ text: SYSTEM_CONTEXT }] },
-              { role: "user", parts: [{ text: userMsg }] },
-            ],
-          }),
-        });
+  try {
+    // 1. Ask Gemini first with SYSTEM_CONTEXT
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [
+          { role: "system", parts: [{ text: SYSTEM_CONTEXT }] },
+          { role: "user", parts: [{ text: userMsg }] },
+        ],
+      }),
+    });
 
-        const data = await response.json();
-        const botReply =
-          data.candidates?.[0]?.content?.parts?.[0]?.text || "⚠️ No reply";
+    const data = await response.json();
 
-        addMessage(botReply, "bot");
-
-        // 2. If Gemini returns JSON action → forward to MCP server
-        try {
-          const maybeAction = JSON.parse(botReply);
-          if (maybeAction?.action) {
-            const crmResp = await fetch(
-              `${MCP_SERVER_URL}/${maybeAction.action}`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(maybeAction.params || {}),
-              }
-            );
-
-            const crmData = await crmResp.json();
-            addMessage(
-              `✅ Zoho CRM Response: ${JSON.stringify(crmData)}`,
-              "bot"
-            );
-          }
-        } catch (err) {
-          // not JSON, ignore
-        }
-      } catch (err) {
-        addMessage("⚠️ Error: " + err.message, "bot");
-      }
+    // ✅ Safely extract Gemini reply
+    let botReply = "⚠️ No reply";
+    if (data?.candidates?.[0]?.content?.parts) {
+      botReply = data.candidates[0].content.parts
+        .map((p) => p.text || "")
+        .join("\n")
+        .trim();
     }
+
+    addMessage(botReply, "bot");
+
+    // 2. If Gemini returns JSON → forward to MCP server
+    try {
+      const maybeAction = JSON.parse(botReply);
+      if (maybeAction?.action) {
+        const crmResp = await fetch(
+          `${MCP_SERVER_URL}/${maybeAction.action}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(maybeAction.params || {}),
+          }
+        );
+
+        const crmData = await crmResp.json();
+        addMessage(
+          `✅ Zoho CRM Response: ${JSON.stringify(crmData)}`,
+          "bot"
+        );
+      }
+    } catch (err) {
+      // not JSON, ignore
+    }
+  } catch (err) {
+    addMessage("⚠️ Error: " + err.message, "bot");
+  }
+}
+
 
     sendBtn.addEventListener("click", sendMessage);
     input.addEventListener("keypress", (e) => {
@@ -158,3 +166,4 @@ Available actions:
   </script>
 </body>
 </html>
+
