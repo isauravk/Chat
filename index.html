@@ -66,9 +66,30 @@
     const input = document.getElementById("msg");
     const sendBtn = document.getElementById("sendBtn");
 
-    // ⚠️ Replace with your actual Gemini API Key
+    // ✅ Gemini API Key (keep for testing)
     const API_KEY = "AIzaSyDpuGJvKMOaB3BdcaTY6DitA2yJQdNd6Tc";
-    const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + API_KEY;
+    const API_URL =
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" +
+      API_KEY;
+
+    // ✅ MCP Server for Zoho CRM
+    const MCP_SERVER_URL =
+      "https://sweetmeal-phytosociological-connie.ngrok-free.dev";
+
+    // ✅ System Context for Gemini
+    const SYSTEM_CONTEXT = `
+You are an assistant for Zoho CRM. 
+Always return actions as JSON if user asks to create, update, search CRM records.
+Available actions: 
+- get_module_data
+- get_available_modules
+- search_records
+- create_record
+- update_record
+- delete_record
+- bulk_create_records
+- get_record_by_id
+`;
 
     function addMessage(text, sender) {
       const div = document.createElement("div");
@@ -85,24 +106,53 @@
       input.value = "";
 
       try {
+        // 1. Ask Gemini first with SYSTEM_CONTEXT
         const response = await fetch(API_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            contents: [{ role: "user", parts: [{ text: userMsg }]}]
-          })
+            contents: [
+              { role: "system", parts: [{ text: SYSTEM_CONTEXT }] },
+              { role: "user", parts: [{ text: userMsg }] },
+            ],
+          }),
         });
 
         const data = await response.json();
-        const botReply = data.candidates?.[0]?.content?.parts?.[0]?.text || "⚠️ No reply";
+        const botReply =
+          data.candidates?.[0]?.content?.parts?.[0]?.text || "⚠️ No reply";
+
         addMessage(botReply, "bot");
+
+        // 2. If Gemini returns JSON action → forward to MCP server
+        try {
+          const maybeAction = JSON.parse(botReply);
+          if (maybeAction?.action) {
+            const crmResp = await fetch(
+              `${MCP_SERVER_URL}/${maybeAction.action}`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(maybeAction.params || {}),
+              }
+            );
+
+            const crmData = await crmResp.json();
+            addMessage(
+              `✅ Zoho CRM Response: ${JSON.stringify(crmData)}`,
+              "bot"
+            );
+          }
+        } catch (err) {
+          // not JSON, ignore
+        }
       } catch (err) {
         addMessage("⚠️ Error: " + err.message, "bot");
       }
     }
 
     sendBtn.addEventListener("click", sendMessage);
-    input.addEventListener("keypress", e => {
+    input.addEventListener("keypress", (e) => {
       if (e.key === "Enter") sendMessage();
     });
   </script>
